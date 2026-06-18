@@ -223,7 +223,8 @@
     <!-- Mobile overlay for sidebar -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
-    <!-- Load scripts in order -->
+    <!-- Load order: normalizer first, then the rest -->
+    <script src="category-normalizer-beta.js"></script>
     <script src="js/config.js"></script>
     <script src="js/demo-data.js"></script>
     <script src="js/data.js"></script>
