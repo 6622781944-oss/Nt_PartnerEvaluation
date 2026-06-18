@@ -114,14 +114,11 @@ const DataService = {
 
     // ── Google Sheets loader ─────────────────────────────────
     async _loadFromSheets() {
-        // Fetch starting from row 2 so the Thai sub-headers become column labels.
-        // gviz will treat the first row of this range (row 2) as headers.
         const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&range=A2:AC`;
         const res  = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
 
-        // Strip the JSONP wrapper Google adds
         const start = text.indexOf('{');
         const end   = text.lastIndexOf('}');
         if (start === -1) throw new Error('Unexpected response from Google Sheets');
@@ -140,7 +137,6 @@ const DataService = {
 
             const name = get(COL.name);
 
-            // Skip template rows, blank rows, and header bleed-through
             if (!name || name === 'ชื่อบริษัท' || name === 'บริษัท' || name === 'Company Name') return;
 
             const revText  = get(COL.revenue_txt);
@@ -148,8 +144,8 @@ const DataService = {
             const financials = this._parseFinancials(revText, profText);
 
             const company = {
-                company_id:             String(autoId++),  // always sequential 1,2,3...
-                sheet_id:               get(COL.id),       // original column A value
+                company_id:             String(autoId++),
+                sheet_id:               get(COL.id),
                 company_name:           name,
                 registration_number:    get(COL.reg_no),
                 address:                get(COL.address),
@@ -178,7 +174,6 @@ const DataService = {
                 _financials:            financials,
             };
 
-            // Derive partnership & strategic fit scores from available data
             company.partnership_score   = this._derivePartnerScore(company);
             company.strategic_fit_score = this._deriveStrategicScore(company);
 
@@ -188,17 +183,12 @@ const DataService = {
         if (this.companies.length === 0) throw new Error('No company rows found in sheet');
     },
 
-    // ── Parse multi-line revenue/profit text ─────────────────
-    // Input:  "ปี 2563 131,546,262.72\nปี 2564 28,229,710.37\n..."
-    // Output: [{ year: 2020, revenue: 131546262.72, net_profit: ... }, ...]
-    // Note:   Thai Buddhist years — subtract 543 to get CE year.
     _parseFinancials(revText, profText) {
         const parseBlock = (text) => {
             const map = {};
             if (!text) return map;
             const lines = text.split(/\r?\n/);
             lines.forEach(line => {
-                // Match: ปี YYYY  1,234,567.89  (with optional spaces/formatting)
                 const m = line.match(/ปี\s*(\d{4})\s+([\d,.\-]+)/);
                 if (m) {
                     const buddhistYear = parseInt(m[1], 10);
@@ -222,22 +212,16 @@ const DataService = {
         }));
     },
 
-    // ── Derive partnership score (0–10) ──────────────────────
-    // Based on depth of relationship data present in the sheet.
     _derivePartnerScore(company) {
-        let score = 3.5; // base for any listed company
+        let score = 3.5;
 
-        // Active collaboration signals
         if (company.collaboration_type)    score += 1.5;
         if (company.current_collaboration) score += 1.5;
         if (company.performance_results)   score += 0.5;
         if (company.collaboration_history) score += 0.5;
-
-        // Future potential signals
         if (company.expansion_opportunities) score += 1.0;
         if (company.joint_business_plan)     score += 0.5;
 
-        // Revenue trend modifier
         const fin = company._financials;
         if (fin.length >= 2) {
             const last = fin[fin.length - 1];
@@ -253,7 +237,6 @@ const DataService = {
         return +(Math.min(10, Math.max(1, score)).toFixed(1));
     },
 
-    // ── Derive strategic fit score (0–10) ───────────────────
     _deriveStrategicScore(company) {
         let score = 3.5;
         if (company.strategic_alignment)     score += 2.5;
@@ -263,7 +246,6 @@ const DataService = {
         return +(Math.min(10, Math.max(1, score)).toFixed(1));
     },
 
-    // ── Demo data fallback ───────────────────────────────────
     _loadDemo() {
         this.companies = DEMO_DATA.companies.map(c => ({
             ...c,
@@ -287,14 +269,16 @@ const DataService = {
         return c ? (c._financials || []) : [];
     },
 
+    // ── Uses canonical master list from CategoryNormalizerBeta ──
     getBusinessTypes() {
-        return [...new Set(this.companies.map(c => c.business_type).filter(Boolean))].sort();
+        return CategoryNormalizerBeta.getMasterList();
     },
 
+    // ── Many-to-many category filter via CategoryNormalizerBeta ──
     filter({ search = '', type = '', score = '' } = {}) {
         return this.companies.filter(c => {
             if (search && !c.company_name.toLowerCase().includes(search.toLowerCase())) return false;
-            if (type   && c.business_type !== type) return false;
+            if (type   && !CategoryNormalizerBeta.normalize(c).includes(type)) return false;
             if (score) {
                 const s = Number(c.partnership_score);
                 if (score === 'high'   && !(s >= 8))          return false;
